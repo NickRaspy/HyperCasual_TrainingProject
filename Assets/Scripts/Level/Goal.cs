@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace Butcher_TA
@@ -7,20 +6,33 @@ namespace Butcher_TA
     public class Goal : MonoBehaviour
     {
         [SerializeField] private AudioClip clip;
+        private bool triggered;
         private void OnTriggerEnter(Collider other)
         {
+            if (triggered || !other.CompareTag("Player") || GameManager.instance == null || !GameManager.instance.IsPlaying)
+            {
+                return;
+            }
+
+            triggered = true;
+            GameManager.instance.player.ChangeMove(false);
             StartCoroutine(Wait());
-            if (other.CompareTag("Player")) GameManager.instance.player.ChangeMove(false);
         }
         private void OnTriggerExit(Collider other)
         {
-            other.transform.parent.GetComponent<PlayerBehavior>().ChangeMove(true);
+            if (other.CompareTag("Player") && GameManager.instance != null && GameManager.instance.IsPlaying)
+            {
+                GameManager.instance.player.ChangeMove(true);
+            }
         }
         IEnumerator Wait()
         {
             yield return new WaitForSeconds(0.5f);
             transform.parent.GetComponent<Animator>().Play("GoalOpen");
-            GameManager.instance.source.PlayOneShot(clip);
+            if (clip != null && GameManager.instance.source != null)
+            {
+                GameManager.instance.source.PlayOneShot(clip);
+            }
         }
     }
 }

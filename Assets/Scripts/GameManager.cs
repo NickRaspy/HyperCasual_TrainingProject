@@ -1,5 +1,5 @@
-using ButchersGames;
 using System.Collections.Generic;
+using ButchersGames;
 using TMPro;
 using UnityEngine;
 using UnityEngine.Events;
@@ -9,21 +9,7 @@ namespace Butcher_TA
 {
     public class GameManager : MonoBehaviour
     {
-        public static GameManager instance = null;
-
-        private void Awake()
-        {
-            if (instance != null)
-            {
-                Destroy(gameObject);
-            }
-            else
-            {
-                instance = this;
-                DontDestroyOnLoad(gameObject);
-            }
-        }
-
+        public static GameManager instance;
         public PlayerBehavior player;
 
         [Header("Audio")]
@@ -42,103 +28,182 @@ namespace Butcher_TA
         [SerializeField] private TMP_Text getMultiScoreButtonText;
         [SerializeField] private List<Text> levelNameTexts;
 
-        public bool IsPlaying { get; private set; }
-
         private int score;
+        private int summaryScore;
+        private Level currentLevel;
+        private bool rewardClaimed;
+
+        public bool IsPlaying { get; private set; }
+        public UnityEvent<int> OnScoreChange { get; } = new UnityEvent<int>();
+        public int ScoreMultiplier { get; set; } = 1;
+
         public int Score
         {
             get => score;
             set
             {
-                if (score != value)
+                int newScore = Mathf.Max(0, value);
+                if (score == newScore)
                 {
-                    score = value;
-                    UpdateScoreUI();
-                    if (score <= 0) EndLevel(false);
-                    OnScoreChange.Invoke(value);
+                    return;
+                }
+
+                score = newScore;
+                UpdateScoreUI();
+                OnScoreChange.Invoke(score);
+
+                if (IsPlaying && score == 0)
+                {
+                    EndLevel(false);
                 }
             }
         }
 
-        public UnityEvent<int> OnScoreChange { get; private set; } = new UnityEvent<int>();
-
-        private int summaryScore = 0;
         public int SummaryScore
         {
             get => summaryScore;
             set
             {
-                if (summaryScore != value)
+                summaryScore = Mathf.Max(0, value);
+                if (summaryScoreText != null)
                 {
-                    summaryScore = value;
-                    summaryScoreText.text = value.ToString();
+                    summaryScoreText.text = summaryScore.ToString();
                 }
             }
         }
 
-        public int ScoreMultiplier { get; set; }
-
-        private Level currentLevel;
-
-        void Start() => PrepareGame();
-
-        private void OnGUI()
+        private void Awake()
         {
-            if ((Event.current.type == EventType.MouseDown || Event.current.type == EventType.TouchDown) && !IsPlaying)
+            if (instance != null && instance != this)
+            {
+                Destroy(gameObject);
+                return;
+            }
+
+            instance = this;
+        }
+
+        private void OnDestroy()
+        {
+            if (instance == this)
+            {
+                instance = null;
+            }
+        }
+
+        private void Start()
+        {
+            SummaryScore = 0;
+            PrepareGame();
+        }
+
+        private void Update()
+        {
+            if (!IsPlaying && menuUI.gameObject.activeSelf && Input.GetMouseButtonDown(0))
             {
                 StartGame();
             }
         }
 
-        public void EndLevel(bool didWin)
-        {
-            SetGetScoreButtonText(false);
-            gameUI.gameObject.SetActive(false);
-
-            player.SetMoveState(false);
-            player.PlayModelAnimation(didWin ? "Dance" : "Anger");
-
-            source.PlayOneShot(didWin ? winSFX : loseSFX);
-
-            if (didWin) winUI.gameObject.SetActive(true);
-            else loseUI.gameObject.SetActive(true);
-        }
-
         public void PrepareGame()
         {
-            Score = 40;
             IsPlaying = false;
-            player.SetModelAnimatorBoolValue("isWalking", false);
-            player.PlayModelAnimation("Idle");
-            player.ChangeOutfit(Score, false);
-            LoadLevel();
+            rewardClaimed = false;
+            ScoreMultiplier = 1;
+            menuUI.gameObject.SetActive(true);
+            gameUI.gameObject.SetActive(false);
+            winUI.gameObject.SetActive(false);
+            loseUI.gameObject.SetActive(false);
+
+            LevelManager.Default.Init();
+            currentLevel = LevelManager.Default.CurrentLevelInstance;
+            if (currentLevel == null)
+            {
+                return;
+            }
+
+            player.SetMoveState(false);
             player.ResetStartPosition(currentLevel.playerSpawnPoint);
             player.SetSplinePath(currentLevel.spline);
             player.ResetMove();
+            player.ResetControls();
+            Score = 40;
+            UpdateScoreUI();
+            player.RefreshScore(Score);
+            player.SetModelAnimatorBoolValue("isWalking", false);
+            player.PlayModelAnimation("Idle");
             UpdateLevelNameTexts();
         }
 
         public void StartGame()
         {
+            if (IsPlaying || currentLevel == null || !menuUI.gameObject.activeSelf)
+            {
+                return;
+            }
+
             menuUI.gameObject.SetActive(false);
             gameUI.gameObject.SetActive(true);
+            IsPlaying = true;
             player.SetMoveState(true);
             player.SetModelAnimatorBoolValue("isWalking", true);
-            IsPlaying = true;
+            LevelManager.Default.StartLevel();
         }
 
-        public void SetSummaryScore(bool isMultiplied) => SummaryScore += Score * (isMultiplied ? ScoreMultiplier : 1);
+        public void EndLevel(bool didWin)
+        {
+            if (!IsPlaying)
+            {
+                return;
+            }
+
+            IsPlaying = false;
+            gameUI.gameObject.SetActive(false);
+            player.SetMoveState(false);
+            player.SetModelAnimatorBoolValue("isWalking", false);
+            player.PlayModelAnimation(didWin ? "Dance" : "Anger");
+
+            if (source != null)
+            {
+                AudioClip clip = didWin ? winSFX : loseSFX;
+                if (clip != null)
+                {
+                    source.PlayOneShot(clip);
+                }
+            }
+
+            if (didWin)
+            {
+                SetGetScoreButtonText(false);
+                winUI.gameObject.SetActive(true);
+            }
+            else
+            {
+                loseUI.gameObject.SetActive(true);
+            }
+        }
+
+        public void SetSummaryScore(bool isMultiplied)
+        {
+            if (rewardClaimed || !winUI.gameObject.activeSelf)
+            {
+                return;
+            }
+
+            rewardClaimed = true;
+            SummaryScore += Score * (isMultiplied ? Mathf.Max(1, ScoreMultiplier) : 1);
+        }
 
         public void SetGetScoreButtonText(bool isMultiplied)
         {
-            if (!isMultiplied) getScoreButtonText.text = Score.ToString();
-            else getMultiScoreButtonText.text = (Score * ScoreMultiplier).ToString();
-        }
-
-        private void LoadLevel()
-        {
-            LevelManager.Default.Init();
-            currentLevel = LevelManager.Default.Levels[LevelManager.Default.CurrentLevelIndex];
+            if (isMultiplied)
+            {
+                getMultiScoreButtonText.text = (Score * Mathf.Max(1, ScoreMultiplier)).ToString();
+            }
+            else
+            {
+                getScoreButtonText.text = Score.ToString();
+            }
         }
 
         private void UpdateScoreUI()
@@ -153,7 +218,10 @@ namespace Butcher_TA
         {
             foreach (Text text in levelNameTexts)
             {
-                text.text = $"Уровень {LevelManager.CurrentLevel}";
+                if (text != null)
+                {
+                    text.text = $"Уровень {LevelManager.CurrentLevel}";
+                }
             }
         }
     }

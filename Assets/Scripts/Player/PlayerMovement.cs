@@ -6,51 +6,94 @@ namespace Butcher_TA
     {
         [SerializeField] private Transform control;
         [SerializeField] private Transform modelPoint;
-        [SerializeField] private float speed = 1f;
-        [SerializeField] private float borderLimit = 1f;
-        [SerializeField] private float rotationAngle = 15f;
-        [SerializeField] private float returnSpeed = 2f;
+        [SerializeField] private float speed = 10f;
+        [SerializeField] private float borderLimit = 0.65f;
+        [SerializeField] private float rotationAngle = 45f;
+        [SerializeField] private float returnSpeed = 10f;
 
-        public bool CanMove { get; set; }
+        private float targetX;
+        private float previousPointerX;
+        private bool wasDragging;
+        private bool canMove;
 
-        private float moveX;
+        public bool CanMove
+        {
+            get => canMove;
+            set
+            {
+                canMove = value;
+                if (!value)
+                {
+                    targetX = control.localPosition.x;
+                    wasDragging = false;
+                }
+            }
+        }
 
         private void Update()
         {
-            if (CanMove && Input.GetMouseButton(0)) Move();
+            bool isDragging = CanMove && Input.GetMouseButton(0);
+            if (isDragging)
+            {
+                if (!wasDragging)
+                {
+                    previousPointerX = Input.mousePosition.x;
+                }
+                else
+                {
+                    Move();
+                }
+            }
 
-            if (moveX != 0f) RotateCharacter(Input.mousePosition);
-            else ReturnToOriginalRotation();
+            wasDragging = isDragging;
 
-            control.localPosition = new Vector3(Mathf.Clamp(control.localPosition.x, -borderLimit, borderLimit), 0f, 0f);
+            Vector3 position = control.localPosition;
+            position.x = Mathf.MoveTowards(position.x, targetX, speed * Time.deltaTime);
+            control.localPosition = position;
+
+            if (isDragging && Mathf.Abs(targetX - position.x) > 0.001f)
+            {
+                RotateCharacter();
+            }
+            else
+            {
+                ReturnToOriginalRotation();
+            }
         }
 
-        public void Move()
+        private void Move()
         {
-            moveX = Input.GetAxis("Mouse X") * Time.deltaTime * speed;
-            control.Translate(moveX, 0f, 0f);
+            float pointerX = Input.mousePosition.x;
+            float delta = pointerX - previousPointerX;
+            previousPointerX = pointerX;
+            targetX = Mathf.Clamp(targetX + delta / Mathf.Max(1, Screen.width) * borderLimit * 2f, -borderLimit, borderLimit);
         }
 
-        public void RotateCharacter(Vector3 mousePosition)
+        private void RotateCharacter()
         {
-            Vector3 viewportPosition = Camera.main.ScreenToViewportPoint(mousePosition);
-            float offsetX = viewportPosition.x - 0.5f;
-            float targetAngle = Mathf.Clamp(offsetX * rotationAngle * 2, -rotationAngle, rotationAngle);
-
-            modelPoint.localRotation = Quaternion.Euler(0f, targetAngle, 0f);
+            float remainingMovement = targetX - control.localPosition.x;
+            float targetAngle = Mathf.Clamp(remainingMovement / Mathf.Max(0.01f, borderLimit) * rotationAngle, -rotationAngle, rotationAngle);
+            modelPoint.localRotation = Quaternion.Slerp(modelPoint.localRotation, Quaternion.Euler(0f, targetAngle, 0f), returnSpeed * Time.deltaTime);
         }
 
-        public void ReturnToOriginalRotation()
+        private void ReturnToOriginalRotation()
         {
-            modelPoint.localRotation = Quaternion.Lerp(modelPoint.localRotation, Quaternion.identity, Time.deltaTime * returnSpeed);
+            modelPoint.localRotation = Quaternion.Slerp(modelPoint.localRotation, Quaternion.identity, returnSpeed * Time.deltaTime);
+        }
+
+        public void ResetPosition()
+        {
+            targetX = 0f;
+            previousPointerX = 0f;
+            wasDragging = false;
+            control.localPosition = new Vector3(0f, control.localPosition.y, control.localPosition.z);
+            modelPoint.localRotation = Quaternion.identity;
         }
     }
 
     public interface IPlayerMovement
     {
-        void Move();
-        void RotateCharacter(Vector3 mousePosition);
-        void ReturnToOriginalRotation();
         bool CanMove { get; set; }
+        void ResetPosition();
     }
 }

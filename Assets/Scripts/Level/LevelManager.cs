@@ -1,58 +1,77 @@
-﻿using System.Collections.Generic;
-using UnityEditor;
-using UnityEngine;
 using System;
-using System.Linq;
+using System.Collections.Generic;
+using UnityEngine;
+
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace ButchersGames
 {
     public class LevelManager : MonoBehaviour
     {
-        #region Singletone
-        private static LevelManager _default;
-        public static LevelManager Default { get => _default; }
-        public LevelManager() => _default = this;
-        #endregion
+        private const string CompleteLevelCountKey = "Complete Lvl Count";
+        private const string LastLevelIndexKey = "Last Level Index";
+        private const string CurrentAttemptKey = "Current Attempt";
 
-        const string CurrentLevel_PrefsKey = "Current Level";
-        const string CompleteLevelCount_PrefsKey = "Complete Lvl Count";
-        const string LastLevelIndex_PrefsKey = "Last Level Index";
-        const string CurrentAttempt_PrefsKey = "Current Attempt";
+        private static LevelManager instance;
 
-        public static int CurrentLevel { get { return (CompleteLevelCount < Default.Levels.Count ? Default.CurrentLevelIndex : CompleteLevelCount) + 1; } set { PlayerPrefs.GetInt(CurrentLevel_PrefsKey, value); } }
-        public static int CompleteLevelCount { get { return PlayerPrefs.GetInt(CompleteLevelCount_PrefsKey); } set { PlayerPrefs.SetInt(CompleteLevelCount_PrefsKey, value); } }
-        public static int LastLevelIndex { get { return PlayerPrefs.GetInt(LastLevelIndex_PrefsKey); } set { PlayerPrefs.SetInt(LastLevelIndex_PrefsKey, value); } }
-        public static int CurrentAttempt { get { return PlayerPrefs.GetInt(CurrentAttempt_PrefsKey); } set { PlayerPrefs.SetInt(CurrentAttempt_PrefsKey, value); } }
+        [SerializeField] private LevelsList levels;
+        [SerializeField] private bool editorMode;
+
+        public static LevelManager Default => instance;
+        public static int CurrentLevel => instance != null && instance.editorMode
+            ? instance.CurrentLevelIndex + 1
+            : CompleteLevelCount + 1;
+        public static int CompleteLevelCount
+        {
+            get => PlayerPrefs.GetInt(CompleteLevelCountKey);
+            set => PlayerPrefs.SetInt(CompleteLevelCountKey, value);
+        }
+
+        public static int LastLevelIndex
+        {
+            get => PlayerPrefs.GetInt(LastLevelIndexKey);
+            set => PlayerPrefs.SetInt(LastLevelIndexKey, value);
+        }
+
+        public static int CurrentAttempt
+        {
+            get => PlayerPrefs.GetInt(CurrentAttemptKey);
+            set => PlayerPrefs.SetInt(CurrentAttemptKey, value);
+        }
+
         public int CurrentLevelIndex;
-
-        [SerializeField] LevelsList levels;
-        [SerializeField] bool editorMode = false;
         public List<Level> Levels => levels.lvls;
+        public Level CurrentLevelInstance { get; private set; }
         public event Action OnLevelStarted;
 
-        public void Init()
+        private void Awake()
         {
-#if !UNITY_EDITOR
-            editorMode = false;
-#endif
-            if (!editorMode) SelectLevel(LastLevelIndex, true);
-
-            if (LastLevelIndex != CurrentLevel)
-            {
-                CurrentAttempt = 0;
-            }
+            instance = this;
         }
 
         private void OnDestroy()
         {
-            LastLevelIndex = CurrentLevelIndex;
+            if (instance == this)
+            {
+                instance = null;
+            }
         }
 
-        private void OnApplicationQuit()
+        public void Init()
         {
-            LastLevelIndex = CurrentLevelIndex;
-        }
+            if (CurrentLevelInstance != null)
+            {
+                return;
+            }
 
+#if !UNITY_EDITOR
+            editorMode = false;
+#endif
+
+            SelectLevel(editorMode ? CurrentLevelIndex : LastLevelIndex);
+        }
 
         public void StartLevel()
         {
@@ -61,85 +80,79 @@ namespace ButchersGames
 
         public void RestartLevel()
         {
-            SelectLevel(CurrentLevelIndex, false);
+            CurrentAttempt++;
+            SelectLevel(CurrentLevelIndex);
         }
 
         public void NextLevel()
         {
-            if (!editorMode) CurrentLevel++;
+            if (!editorMode)
+            {
+                CompleteLevelCount++;
+                CurrentAttempt = 0;
+            }
+
             SelectLevel(CurrentLevelIndex + 1);
         }
 
-        public void SelectLevel(int levelIndex, bool indexCheck = true)
+        public void PrevLevel()
         {
-            if (indexCheck)
-                levelIndex = GetCorrectedIndex(levelIndex);
+            SelectLevel(CurrentLevelIndex - 1);
+        }
 
-            if (Levels[levelIndex] == null)
+        public void SelectLevel(int levelIndex)
+        {
+            if (levels == null || levels.lvls == null || levels.lvls.Count == 0)
             {
-                Debug.Log("<color=red>There is no prefab attached!</color>");
+                Debug.LogError("Level list is empty.", this);
                 return;
             }
 
-            var level = Levels[levelIndex];
+            int count = levels.lvls.Count;
+            int correctedIndex = ((levelIndex % count) + count) % count;
 
-            if (level)
+            if (!editorMode && levels.randomizedLvls && levelIndex >= count && count > 1)
             {
-                SelLevelParams(level);
-                CurrentLevelIndex = levelIndex;
-            }
-        }
-
-        public void PrevLevel() =>
-            SelectLevel(CurrentLevelIndex - 1);
-
-        private int GetCorrectedIndex(int levelIndex)
-        {
-            if (editorMode)
-                return levelIndex > Levels.Count - 1 || levelIndex <= 0 ? 0 : levelIndex;
-            else
-            {
-                int levelId = CurrentLevel;
-                if (levelId > Levels.Count - 1)
+                correctedIndex = UnityEngine.Random.Range(0, count - 1);
+                if (correctedIndex >= CurrentLevelIndex)
                 {
-                    if (levels.randomizedLvls)
-                    {
-                        List<int> lvls = Enumerable.Range(0, levels.lvls.Count).ToList();
-                        lvls.RemoveAt(CurrentLevelIndex);
-                        return lvls[UnityEngine.Random.Range(0, lvls.Count)];
-                    }
-                    else return levelIndex % levels.lvls.Count;
+                    correctedIndex++;
                 }
-                return levelId;
             }
-        }
 
-        private void SelLevelParams(Level level)
-        {
-            if (level)
+            Level prefab = levels.lvls[correctedIndex];
+            if (prefab == null)
             {
-                ClearChilds();
+                Debug.LogError($"Level prefab at index {correctedIndex} is missing.", this);
+                return;
+            }
+
+            for (int i = transform.childCount - 1; i >= 0; i--)
+            {
+                GameObject child = transform.GetChild(i).gameObject;
+                if (Application.isPlaying)
+                {
+                    child.SetActive(false);
+                    Destroy(child);
+                }
+                else
+                {
+                    DestroyImmediate(child);
+                }
+            }
+
 #if UNITY_EDITOR
-            if (Application.isPlaying)
-            {
-                Instantiate(level, transform);
-            }
-            else
-            {
-                PrefabUtility.InstantiatePrefab(level, transform);
-            }
+            CurrentLevelInstance = Application.isPlaying
+                ? Instantiate(prefab, transform)
+                : (Level)PrefabUtility.InstantiatePrefab(prefab, transform);
 #else
-                Instantiate(level, transform);
+            CurrentLevelInstance = Instantiate(prefab, transform);
 #endif
-            }
-        }
 
-        private void ClearChilds()
-        {
-            for (int i = 0; i < transform.childCount; i++)
+            CurrentLevelIndex = correctedIndex;
+            if (Application.isPlaying && !editorMode)
             {
-                GameObject destroyObject = transform.GetChild(i).gameObject;
-                DestroyImmediate(destroyObject);
+                LastLevelIndex = correctedIndex;
             }
         }
     }

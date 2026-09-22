@@ -15,29 +15,23 @@ namespace Butcher_TA
 
         private int currentOutfitIndex;
 
-        private void Start()
-        {
-            GameManager.instance.OnScoreChange.AddListener(OnScoreChange);
-        }
-
         public void OnScoreChange(int score)
         {
-            SetScoreSliderValue(score);
+            slider.value = score;
         }
 
         public void ChangeOutfit(int score)
         {
             int index = GetNewOutfitIndex(score);
-
-            if (currentOutfitIndex == index) return;
-
-            outfits[currentOutfitIndex].outfitModel.SetActive(false);
+            for (int i = 0; i < outfits.Count; i++)
+            {
+                outfits[i].outfitModel.SetActive(i == index);
+            }
 
             currentOutfitIndex = index;
-
-            outfits[currentOutfitIndex].outfitModel.SetActive(true);
-
-            ChangeStatus(currentOutfitIndex);
+            sliderFill.color = stateColors[index];
+            stateText.text = states[index];
+            stateText.color = stateColors[index];
         }
 
         public int GetCurrentOutfitIndex()
@@ -47,16 +41,7 @@ namespace Butcher_TA
 
         public int GetNewOutfitIndex(int score)
         {
-            return outfits.FindLastIndex(x => score >= x.minimalScore);
-        }
-
-        private void SetScoreSliderValue(int score) => slider.value = score;
-
-        private void ChangeStatus(int index)
-        {
-            sliderFill.color = stateColors[index];
-            stateText.text = states[index];
-            stateText.color = stateColors[index];
+            return Mathf.Max(0, outfits.FindLastIndex(outfit => score >= outfit.minimalScore));
         }
     }
 
@@ -66,6 +51,5 @@ namespace Butcher_TA
         void ChangeOutfit(int score);
         int GetCurrentOutfitIndex();
         int GetNewOutfitIndex(int score);
-
     }
 }

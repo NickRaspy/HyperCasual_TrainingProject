@@ -1,9 +1,5 @@
-using System.Collections;
-using System.Collections.Generic;
-using TMPro;
 using UnityEngine;
 using UnityEngine.Splines;
-using UnityEngine.UI;
 
 namespace Butcher_TA
 {
@@ -26,18 +22,72 @@ namespace Butcher_TA
 
         private void Start()
         {
-            GameManager.instance.OnScoreChange.AddListener(score => 
+            GameManager.instance.OnScoreChange.AddListener(OnScoreChanged);
+        }
+
+        private void OnDestroy()
+        {
+            if (GameManager.instance != null)
             {
-                if (score > 0) ChangeOutfit(score, true);
-                else GameManager.instance.EndLevel(false);
-            });
+                GameManager.instance.OnScoreChange.RemoveListener(OnScoreChanged);
+            }
+        }
+
+        private void OnScoreChanged(int score)
+        {
+            playerScore.OnScoreChange(score);
+            if (score > 0)
+            {
+                ChangeOutfit(score, GameManager.instance.IsPlaying);
+            }
         }
 
         public void SetMoveState(bool isMoving)
         {
             playerMovement.CanMove = isMoving;
-            if(isMoving ) playerSpline.StartMove();
-            else playerSpline.StopMove();
+            if (isMoving)
+            {
+                playerSpline.StartMove();
+            }
+            else
+            {
+                playerSpline.StopMove();
+            }
+        }
+
+        public void ChangeMove(bool isMoving)
+        {
+            playerMovement.CanMove = isMoving;
+        }
+
+        public void ResetControls()
+        {
+            playerMovement.ResetPosition();
+        }
+
+        public void RefreshScore(int score)
+        {
+            playerScore.OnScoreChange(score);
+            playerScore.ChangeOutfit(score);
+            int outfitIndex = playerScore.GetCurrentOutfitIndex();
+            playerAnimation.SetModelAnimatorIntegerValue("walkState", outfitIndex > 1 ? 1 : 0);
+        }
+
+        public void ChangeOutfit(int score, bool mustAnimate)
+        {
+            int previousIndex = playerScore.GetCurrentOutfitIndex();
+            int newIndex = playerScore.GetNewOutfitIndex(score);
+            if (newIndex == previousIndex)
+            {
+                return;
+            }
+
+            playerScore.ChangeOutfit(score);
+            playerAnimation.SetModelAnimatorIntegerValue("walkState", newIndex > 1 ? 1 : 0);
+            if (mustAnimate)
+            {
+                playerAnimation.PlayModelAnimation(previousIndex < newIndex ? "Spin" : "Stepped");
+            }
         }
 
         public void UseEffect(Material particle, Color color, int points, bool isGood)
@@ -68,25 +118,6 @@ namespace Butcher_TA
         public void ResetStartPosition(Transform spawnpoint)
         {
             playerSpline.ResetStartPosition(spawnpoint);
-        }
-
-        public void ChangeOutfit(int score, bool mustAnimate)
-        {
-            int currentOutfitIndex = playerScore.GetCurrentOutfitIndex();
-            int newOutfitIndex = playerScore.GetNewOutfitIndex(score);
-
-            if (currentOutfitIndex != newOutfitIndex)
-            {
-                playerScore.ChangeOutfit(score);
-
-                if (!mustAnimate) return;
-                playerAnimation.PlayModelAnimation(currentOutfitIndex < newOutfitIndex ? "Spin" : "Stepped");
-                playerAnimation.SetModelAnimatorIntegerValue("walkState", newOutfitIndex > 1 ? 1 : 0);
-            }
-        }
-        public void ChangeMove(bool isMoving)
-        {
-            playerMovement.CanMove = isMoving;
         }
     }
 }

@@ -15,7 +15,7 @@ namespace Butcher_TA
 
         public void StopMove() => splineAnimate.Pause();
 
-        public void ResetStartPosition(Transform spawnpoint) => transform.SetLocalPositionAndRotation(spawnpoint.position, spawnpoint.rotation);
+        public void ResetStartPosition(Transform spawnpoint) => transform.SetPositionAndRotation(spawnpoint.position, spawnpoint.rotation);
     }
 
     public interface IPlayerSpline

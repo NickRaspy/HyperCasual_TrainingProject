@@ -1,4 +1,3 @@
-using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -13,7 +12,6 @@ namespace Butcher_TA
 
         private SpriteRenderer haloSpriteRenderer;
         private Animator pointEffectAnimator;
-        private Coroutine currentCoroutine;
 
         private void Start()
         {
@@ -28,27 +26,17 @@ namespace Butcher_TA
             halo.gameObject.SetActive(true);
             halo.Play("Splash");
 
-            foreach (var p in particles)
+            foreach (ParticleSystem p in particles)
             {
-                p.GetComponent<ParticleSystemRenderer>().material = particle;
+                if (particle != null)
+                {
+                    p.GetComponent<ParticleSystemRenderer>().material = particle;
+                }
                 p.Play();
             }
 
-            if (currentCoroutine != null) StopCoroutine(currentCoroutine);
-            currentCoroutine = StartCoroutine(Combo(points, isGood));
-        }
-
-        private IEnumerator Combo(int points, bool isGain)
-        {
-            int combo = 0;
-            combo += isGain ? points : -points;
-            pointEffect.text = (isGain ? "+" : "") + combo;
-
-            pointEffectAnimator.Play(isGain ? "Gain" : "Loss");
-
-            yield return new WaitForSeconds(1f);
-
-            combo = 0;
+            pointEffect.text = points.ToString("+0;-0;0");
+            pointEffectAnimator.Play(isGood ? "Gain" : "Loss", 0, 0f);
         }
     }
 
